@@ -1,0 +1,58 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+env/
+.venv*/
+venv*/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Runtime data
+data/knowledge_base/*
+data/logs/*
+!data/knowledge_base/.gitkeep
+!data/logs/.gitkeep
+
+# Audio files
+*.wav
+*.mp3
+*.pcm
+
+# Docker
+docker/data/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db

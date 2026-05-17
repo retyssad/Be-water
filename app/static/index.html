@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>水利工程技术语音问答助手 v2.0</title>
+<style>
+  :root {
+    --bg: #f0f4f8; --card: #ffffff; --primary: #1e6f9f; --accent: #00a8cc;
+    --text: #2d3748; --muted: #718096; --border: #e2e8f0;
+    --success: #38a169; --warn: #d69e2e; --error: #e53e3e;
+    --bubble-user: #e3f2fd; --bubble-ai: #f7fafc; --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .header { background: linear-gradient(135deg, var(--primary), var(--accent)); color: #fff; padding: 16px 24px; box-shadow: var(--shadow); }
+  .header h1 { font-size: 1.4rem; font-weight: 600; }
+  .header .sub { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.ok { background: #68d391; } .status-dot.err { background: #fc8181; }
+  .tabs { display: flex; gap: 2px; max-width: 1200px; margin: 16px auto 0; padding: 0 20px; }
+  .tab { padding: 8px 20px; border: none; background: #d4dde6; color: var(--text); border-radius: 8px 8px 0 0; cursor: pointer; font-size: 0.9rem; transition: all 0.15s; }
+  .tab.active { background: var(--card); font-weight: 600; color: var(--primary); }
+  .layout { max-width: 1200px; margin: 0 auto; padding: 0 20px 20px; display: grid; grid-template-columns: 1fr 380px; gap: 20px; }
+  .card { background: var(--card); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .card-header { padding: 14px 20px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between; }
+  .chat-area { display: flex; flex-direction: column; height: 480px; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.6; font-size: 0.92rem; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.ai { align-self: flex-start; background: var(--bubble-ai); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg .meta { font-size: 0.75rem; color: var(--muted); margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--border); }
+  .msg .meta span { display: inline-block; background: #edf2f7; padding: 2px 8px; border-radius: 4px; margin: 2px; }
+  .chat-input-row { display: flex; padding: 12px 16px; border-top: 1px solid var(--border); gap: 10px; align-items: center; }
+  .chat-input-row input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 20px; font-size: 0.9rem; outline: none; }
+  .chat-input-row input:focus { border-color: var(--accent); }
+  .chat-input-row button { padding: 10px 20px; border: none; background: var(--primary); color: #fff; border-radius: 20px; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; white-space: nowrap; }
+  .chat-input-row button:hover { background: var(--accent); }
+  .chat-input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-mic { background: var(--error) !important; font-size: 1.1rem !important; width: 42px; height: 42px; border-radius: 50% !important; padding: 0 !important; }
+  .btn-mic.recording { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(229,62,62,0.5); } 50% { box-shadow: 0 0 0 12px rgba(229,62,62,0); } }
+
+  .right-panel { display: flex; flex-direction: column; gap: 16px; }
+  .term-search { display: flex; gap: 8px; padding: 10px 16px; }
+  .term-search input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; outline: none; }
+  .term-search input:focus { border-color: var(--accent); }
+  .term-search button { padding: 8px 14px; border: none; background: var(--primary); color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+  .term-result { padding: 0 16px 14px; font-size: 0.85rem; line-height: 1.7; }
+  .term-result .label { font-weight: 600; color: var(--primary); }
+  .term-result .def { margin-top: 6px; }
+  .term-result .meta { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+
+  /* Pipeline */
+  .pipeline { display: flex; align-items: center; padding: 12px 16px; gap: 4px; flex-wrap: wrap; }
+  .pipeline .stage { padding: 4px 10px; border-radius: 12px; font-size: 0.72rem; background: #edf2f7; color: var(--muted); transition: all 0.3s; text-align: center; }
+  .pipeline .stage.active { background: var(--accent); color: #fff; font-weight: 600; }
+  .pipeline .stage.done { background: var(--success); color: #fff; }
+  .pipeline .stage.err { background: var(--error); color: #fff; }
+  .pipeline .arrow { color: var(--muted); font-size: 0.7rem; }
+
+  .voice-demo { padding: 14px 20px; }
+  .voice-demo textarea { width: 100%; height: 60px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; resize: none; outline: none; }
+  .voice-demo textarea:focus { border-color: var(--accent); }
+  .voice-demo button { margin-top: 8px; padding: 8px 16px; border: none; background: var(--accent); color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+  .voice-demo audio { margin-top: 8px; width: 100%; }
+
+  .quick-tests { padding: 0 16px 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .quick-tests button { padding: 5px 12px; border: 1px solid var(--border); background: #fff; border-radius: 14px; cursor: pointer; font-size: 0.8rem; color: var(--primary); transition: all 0.15s; }
+  .quick-tests button:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 40px 20px; }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    .chat-area { height: 340px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>水利工程技术语音问答助手 <span style="font-size:0.7rem;opacity:0.7;">v2.0</span></h1>
+  <div class="sub"><span class="status-dot ok" id="status-dot"></span> DeepSeek + 百度 ASR/TTS &nbsp;|&nbsp; <span id="status-text">检测中...</span></div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('text')">文本问答</button>
+  <button class="tab" onclick="switchTab('voice')">语音问答</button>
+</div>
+
+<div class="layout">
+  <!-- ====== 左：对话区 ====== -->
+  <div class="card" id="panel-chat">
+    <div class="card-header">问答对话 <span style="font-size:0.75rem;color:var(--muted);font-weight:400;">基于 DeepSeek + SL 规范库</span></div>
+    <div class="chat-area">
+      <div class="chat-messages" id="chat-msgs">
+        <div class="empty-state"><div class="icon">💧</div><p>输入水利工程相关问题<br>DeepSeek 将结合 SL 规范为你解答</p></div>
+      </div>
+      <div class="chat-input-row">
+        <button class="btn-mic" id="mic-btn" onclick="toggleMic()" title="语音输入">🎤</button>
+        <input type="text" id="chat-input" placeholder="输入水利工程问题..." onkeydown="if(event.key==='Enter')sendChat()">
+        <button id="chat-btn" onclick="sendChat()">发送</button>
+      </div>
+    </div>
+    <div class="quick-tests">
+      <span style="font-size:0.78rem;color:var(--muted);padding:5px 0;">快速提问：</span>
+      <button onclick="quickAsk('帷幕灌浆的作用是什么')">帷幕灌浆</button>
+      <button onclick="quickAsk('水利工程分为哪几个等级')">工程等级</button>
+      <button onclick="quickAsk('混凝土抗裂评估有哪些指标')">抗裂评估</button>
+      <button onclick="quickAsk('什么是水锤现象')">水锤现象</button>
+    </div>
+  </div>
+
+  <!-- ====== 语音处理面板 ====== -->
+  <div class="card hidden" id="panel-voice">
+    <div class="card-header">语音处理流水线 <span style="font-size:0.75rem;color:var(--muted);font-weight:400;">8.1.1 → 8.1.5</span></div>
+    <div class="pipeline" id="pipeline">
+      <span class="stage" id="st8_1">8.1.1 语音采集</span><span class="arrow">→</span>
+      <span class="stage" id="st8_2">8.1.2 语音识别</span><span class="arrow">→</span>
+      <span class="stage" id="st8_3">8.1.3 核心交互</span><span class="arrow">→</span>
+      <span class="stage" id="st8_4">8.1.4 语音合成</span><span class="arrow">→</span>
+      <span class="stage" id="st8_5">8.1.5 语音响应</span>
+    </div>
+    <div style="padding: 14px 20px;">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;">
+        <button class="btn-mic" id="mic-btn-voice" onclick="toggleMic()" title="录音">🎤</button>
+        <span style="font-size:0.85rem;color:var(--muted);" id="mic-status">点击麦克风开始录音</span>
+        <span style="font-size:0.75rem;color:var(--muted);margin-left:auto;" id="rec-time"></span>
+        <meter id="vol-meter" value="0" min="0" max="100" style="width:60px;height:16px;margin-left:8px;" title="麦克风音量"></meter>
+      </div>
+      <div id="voice-result" style="font-size:0.85rem;line-height:1.6;">
+        <div style="background:#f7fafc;padding:10px;border-radius:6px;margin-bottom:8px;">
+          <strong>识别结果：</strong><span id="asr-text" style="color:var(--muted);">等待录音...</span>
+        </div>
+        <div style="background:#f7fafc;padding:10px;border-radius:6px;margin-bottom:8px;">
+          <strong>AI 回答：</strong><span id="llm-text" style="color:var(--muted);">等待识别完成...</span>
+        </div>
+        <div id="voice-audio"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 右：功能面板 ====== -->
+  <div class="right-panel">
+    <div class="card">
+      <div class="card-header">术语库查询</div>
+      <div class="term-search">
+        <input type="text" id="term-input" placeholder="输入术语，如：帷幕灌浆" onkeydown="if(event.key==='Enter')searchTerm()">
+        <button onclick="searchTerm()">查询</button>
+        <button onclick="searchTerm()" style="font-size:0.8rem;background:#edf2f7;color:var(--text);" id="fuzzy-btn">模糊</button>
+      </div>
+      <div class="term-result" id="term-result"><span style="color:var(--muted)">输入术语关键词，查看定义和规范来源</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">语音合成测试</div>
+      <div class="voice-demo">
+        <textarea id="tts-text" placeholder="输入要合成语音的文本...">水利工程的主要类型包括防洪工程、灌溉工程、水力发电工程。</textarea>
+        <button onclick="testTTS()">合成并播放</button>
+        <div id="tts-audio"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">模块状态 <span style="font-size:0.78rem;font-weight:400;color:var(--muted);" id="health-ts"></span></div>
+      <div style="padding:10px 20px 14px;font-size:0.78rem;" id="health-info">检测中...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/v1';
+let currentTab = 'text';
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+// ====== 标签切换 ======
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='text')||(i===1&&tab==='voice')));
+  document.getElementById('panel-chat').classList.toggle('hidden', tab !== 'text');
+  document.getElementById('panel-voice').classList.toggle('hidden', tab !== 'voice');
+}
+
+// ====== 健康检查 ======
+async function checkHealth() {
+  try {
+    const r = await fetch(API + '/voice/status');
+    const d = await r.json();
+    document.getElementById('status-dot').className = 'status-dot ok';
+    document.getElementById('status-text').textContent = 'DeepSeek + 百度 ASR/TTS';
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    for (const [k,v] of Object.entries(d)) {
+      const st = v.status || v.state || '?';
+      const color = st==='idle'||st==='ready' ? 'var(--success)' : 'var(--warn)';
+      html += '<tr><td style="padding:2px 0;">' + k.toUpperCase() + '</td><td style="color:'+color+'">' + st + '</td></tr>';
+    }
+    html += '</table>';
+    document.getElementById('health-info').innerHTML = html;
+    document.getElementById('health-ts').textContent = new Date().toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('status-dot').className = 'status-dot err';
+    document.getElementById('status-text').textContent = '服务异常';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 30000);
+
+// ====== 麦克风录音（ScriptProcessorNode 直采 + OfflineAudioContext 重采样）======
+// 不指定 AudioContext sampleRate，用硬件默认值。stop 时读取实际采样率，用 OfflineAudioContext 重采样到 16kHz
+let audioContext = null;
+let floatBuffer = [];      // 录制的 Float32 数据（硬件采样率）
+let pcmBuffer = [];        // 重采样后的 Int16 PCM（16kHz）
+let streamRef = null;
+let scriptProcessor = null;
+let actualSampleRate = 0;
+
+async function toggleMic() {
+  if (isRecording) {
+    stopRecording();
+    return;
+  }
+
+  if (!navigator.mediaDevices) {
+    alert('浏览器不支持麦克风访问，请使用 Chrome 或 Edge');
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    });
+    streamRef = stream;
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    actualSampleRate = audioContext.sampleRate;
+    console.log('AudioContext 状态:', audioContext.state, '采样率:', actualSampleRate);
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+      console.log('AudioContext resumed, 新状态:', audioContext.state);
+    }
+
+    // 诊断：检查音频轨道
+    const audioTrack = stream.getAudioTracks()[0];
+    console.log('音频轨道:', audioTrack.label, '| enabled:', audioTrack.enabled, '| muted:', audioTrack.muted, '| readyState:', audioTrack.readyState);
+
+    const source = audioContext.createMediaStreamSource(stream);
+    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    floatBuffer = [];
+    pcmBuffer = [];
+    let sampleLogged = false;
+
+    scriptProcessor.onaudioprocess = (e) => {
+      if (!isRecording) return;
+      const input = e.inputBuffer.getChannelData(0);
+      // 打印前5个样本（只打印一次，用于诊断）
+      if (!sampleLogged && input.length > 0) {
+        console.log('首批音频样本:', input[0].toFixed(6), input[1].toFixed(6), input[2].toFixed(6), input[3].toFixed(6), input[4].toFixed(6), '...');
+        sampleLogged = true;
+      }
+      // 实时音量表
+      let sumSq = 0;
+      for (let i = 0; i < input.length; i++) sumSq += input[i] * input[i];
+      const rms = Math.sqrt(sumSq / input.length);
+      const level = Math.min(100, Math.round(rms * 500));
+      const meter = document.getElementById('vol-meter');
+      if (meter) meter.value = level;
+      // 收集 Float32 原始数据
+      for (let i = 0; i < input.length; i++) floatBuffer.push(input[i]);
+    };
+
+    source.connect(scriptProcessor);
+    // 必须连接到 destination 以保持音频图活跃（Chrome 会优化掉无终点链路）
+    // GainNode 设置为 0 避免扬声器回声反馈
+    const silenceGain = audioContext.createGain();
+    silenceGain.gain.value = 0;
+    scriptProcessor.connect(silenceGain);
+    silenceGain.connect(audioContext.destination);
+
+    isRecording = true;
+    document.querySelectorAll('.btn-mic').forEach(b => { b.classList.add('recording'); b.textContent = '⏹'; });
+    document.getElementById('mic-status').textContent = '正在录音... 观察左侧音量表';
+    document.getElementById('rec-time').textContent = '';
+
+    let sec = 0;
+    const timerId = setInterval(() => {
+      if (!isRecording) { clearInterval(timerId); return; }
+      sec++;
+      document.getElementById('rec-time').textContent = sec + 's';
+      if (sec >= 10) stopRecording();
+    }, 1000);
+
+  } catch(e) {
+    alert('麦克风权限被拒绝: ' + e.message);
+  }
+}
+
+async function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+
+  document.querySelectorAll('.btn-mic').forEach(b => { b.classList.remove('recording'); b.textContent = '🎤'; });
+  const meter = document.getElementById('vol-meter');
+  if (meter) meter.value = 0;
+
+  if (scriptProcessor) {
+    scriptProcessor.disconnect();
+    scriptProcessor = null;
+  }
+  if (streamRef) {
+    streamRef.getTracks().forEach(t => t.stop());
+    streamRef = null;
+  }
+  if (audioContext && audioContext.state !== 'closed') {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
+
+  if (floatBuffer.length < actualSampleRate * 0.5) {
+    document.getElementById('mic-status').textContent = '录音太短（需≥0.5秒），请重试';
+    resetPipeline();
+    return;
+  }
+
+  // 用 OfflineAudioContext 将实际采样率重采样到 16kHz
+  const origRate = actualSampleRate;
+  const targetRate = 16000;
+  const duration = floatBuffer.length / origRate;
+  const targetLen = Math.ceil(duration * targetRate);
+
+  // 关键：OfflineAudioContext 的 sampleRate 必须是目标采样率
+  const resampleCtx = new OfflineAudioContext(1, targetLen, targetRate);
+  const srcBuf = resampleCtx.createBuffer(1, floatBuffer.length, origRate);
+  srcBuf.getChannelData(0).set(floatBuffer);
+  const srcNode = resampleCtx.createBufferSource();
+  srcNode.buffer = srcBuf;
+  srcNode.connect(resampleCtx.destination);
+  srcNode.start(0);
+
+  document.getElementById('mic-status').textContent = '重采样中... ' + origRate + 'Hz → ' + targetRate + 'Hz | ' + duration.toFixed(1) + 's';
+  const rendered = await resampleCtx.startRendering();
+  const floatData = rendered.getChannelData(0);
+
+  // 诊断日志
+  let peak = 0, sumSq = 0;
+  for (let i = 0; i < floatData.length; i++) {
+    const abs = Math.abs(floatData[i]);
+    if (abs > peak) peak = abs;
+    sumSq += floatData[i] * floatData[i];
+  }
+  const rms = Math.sqrt(sumSq / floatData.length);
+  console.log('重采样完成: ' + origRate + 'Hz→' + targetRate + 'Hz | 样本数=' + floatData.length + ' | RMS=' + rms.toFixed(4) + ' | peak=' + peak.toFixed(4));
+
+  // Float32 → Int16，自动增益到 -6dBFS（峰值 0.5）
+  const gain = peak > 0.001 ? Math.min(10, Math.max(1, 0.5 / peak)) : 10;
+  console.log('增益: peak=' + peak.toFixed(4) + ' → gain=' + gain.toFixed(1) + 'x');
+
+  for (let i = 0; i < floatData.length; i++) {
+    const s = Math.max(-1, Math.min(1, floatData[i] * gain));
+    pcmBuffer.push(s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7FFF));
+  }
+
+  document.getElementById('mic-status').textContent =
+    '采集完成 | 原始' + origRate + 'Hz→16kHz | 增益' + gain.toFixed(1) + 'x | ' + (floatData.length / targetRate).toFixed(1) + 's';
+
+  processRecordedAudio();
+}
+
+async function processRecordedAudio() {
+  if (pcmBuffer.length < 8000) {  // < 0.5 秒
+    document.getElementById('mic-status').textContent = '录音太短（需≥0.5秒），请重试';
+    resetPipeline();
+    return;
+  }
+
+  // 将录制的 PCM 转为 base64
+  const int16 = new Int16Array(pcmBuffer);
+  const bytes = new Uint8Array(int16.buffer);
+  const CHUNK = 0x8000;
+  const chunks = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
+  }
+  const pcmBase64 = btoa(chunks.join(''));
+
+  const duration = (pcmBuffer.length / 16000).toFixed(1);
+  setPipelineStage(1, 'done');
+  document.getElementById('mic-status').textContent = '8.1.1 采集完成 | ' + duration + 's PCM 16kHz';
+
+  // ---- 调用语音识别 ----
+  setPipelineStage(2, 'active');
+  document.getElementById('mic-status').textContent = '8.1.2 语音识别中...';
+
+  try {
+    const r = await fetch(API + '/voice/recognize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_data: pcmBase64,
+        sample_rate: 16000,
+        bit_depth: 16,
+        channels: 1,
+      }),
+    });
+    const asrResult = await r.json();
+
+    if (asrResult.error_code || !asrResult.text) {
+      document.getElementById('asr-text').textContent = '识别失败（' + (asrResult.error_code || 'R001') + '）请检查：1. 麦克风是否工作（看左侧音量表） 2. 说话是否够大声清晰 3. 距离麦克风不要太远';
+      document.getElementById('asr-text').style.color = 'var(--error)';
+      setPipelineStage(2, 'err');
+      document.getElementById('mic-status').textContent = 'ASR 识别失败 | 样本数: ' + pcmBuffer.length + ' | 约' + (pcmBuffer.length / 16000).toFixed(1) + '秒';
+      document.getElementById('llm-text').textContent = '建议：靠近麦克风，用正常语速和音量重新录音';
+      document.getElementById('llm-text').style.color = 'var(--warn)';
+      return;
+    }
+
+    document.getElementById('asr-text').textContent = asrResult.text;
+    setPipelineStage(2, 'done');
+
+    // ---- 用识别文本调用问答 ----
+    setPipelineStage(3, 'active');
+    document.getElementById('mic-status').textContent = '8.1.3 AI 思考中...';
+
+    const chatR = await fetch(API + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: asrResult.text }),
+    });
+    const chatD = await chatR.json();
+
+    if (chatD.error_code) {
+      document.getElementById('llm-text').textContent = chatD.message;
+      document.getElementById('llm-text').style.color = 'var(--error)';
+      setPipelineStage(3, 'err');
+      return;
+    }
+
+    document.getElementById('llm-text').textContent = chatD.answer || '';
+    document.getElementById('llm-text').style.color = 'var(--text)';
+    setPipelineStage(3, 'done');
+    setPipelineStage(4, 'done');
+    setPipelineStage(5, 'done');
+    document.getElementById('mic-status').textContent = '完成 | ' + (chatD.domain||'通用');
+
+    // 播放合成音频
+    try {
+      const ttsR = await fetch(API + '/voice/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: (chatD.answer || '').substring(0, 500) }),
+      });
+      const ttsD = await ttsR.json();
+      if (ttsD.audio_data) {
+        document.getElementById('voice-audio').innerHTML = '<audio controls autoplay src="data:audio/wav;base64,' + ttsD.audio_data + '" style="width:100%;margin-top:8px;"></audio>';
+      }
+    } catch(e) { /* TTS is optional */ }
+
+  } catch(e) {
+    document.getElementById('mic-status').textContent = '网络错误: ' + e.message;
+    setPipelineStage(2, 'err');
+  }
+}
+
+function resetPipeline() {
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById('st8_' + i).className = 'stage';
+  }
+}
+
+function setPipelineStage(n, state) {
+  const el = document.getElementById('st8_' + n);
+  if (!el) return;
+  el.className = 'stage ' + state;
+}
+
+// ====== 对话问答 ======
+async function sendChat() {
+  const inp = document.getElementById('chat-input');
+  const btn = document.getElementById('chat-btn');
+  const q = inp.value.trim();
+  if (!q) return;
+
+  inp.value = '';
+  btn.disabled = true;
+  btn.textContent = '思考中...';
+  appendMsg('user', q);
+
+  try {
+    const r = await fetch(API + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    });
+    const d = await r.json();
+    if (d.error_code) {
+      appendMsg('ai', '[错误] ' + d.message);
+    } else {
+      let html = d.answer;
+      let meta = [];
+      if (d.sources && d.sources.length > 0) meta.push('来源: ' + d.sources.map(s => s.title||s).join(', '));
+      if (d.domain) meta.push('领域: ' + d.domain);
+      if (d.confidence) meta.push('置信度: ' + (d.confidence*100).toFixed(0) + '%');
+      if (meta.length) html += '<div class="meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>';
+      appendMsg('ai', html, true);
+
+      // 自动 TTS 播报答案
+      if (currentTab === 'text') {
+        autoTTS(d.answer);
+      }
+    }
+  } catch(e) {
+    appendMsg('ai', '[网络错误] ' + e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '发送';
+  inp.focus();
+}
+
+async function autoTTS(text) {
+  try {
+    const r = await fetch(API + '/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.substring(0, 500) }),
+    });
+    if (r.status === 200) {
+      const d = await r.json();
+      if (d.audio_data) {
+        const audio = new Audio('data:audio/wav;base64,' + d.audio_data);
+        audio.play().catch(() => {});
+      }
+    }
+  } catch(e) { /* silent */ }
+}
+
+function quickAsk(q) {
+  document.getElementById('chat-input').value = q;
+  sendChat();
+}
+
+function appendMsg(role, content, html) {
+  const msgs = document.getElementById('chat-msgs');
+  const empty = msgs.querySelector('.empty-state');
+  if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (html) div.innerHTML = content;
+  else div.textContent = content;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ====== 术语查询 ======
+async function searchTerm() {
+  const inp = document.getElementById('term-input');
+  const fuzzy = document.getElementById('fuzzy-btn');
+  const term = inp.value.trim();
+  const result = document.getElementById('term-result');
+  if (!term) { result.innerHTML = '<span style="color:var(--error)">请输入术语</span>'; return; }
+
+  const isFuzzy = fuzzy.textContent === '模糊';
+  let url = API + '/terminology/search?term=' + encodeURIComponent(term);
+  if (isFuzzy) url += '&fuzzy=true';
+
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.error_code) {
+      result.innerHTML = '<span style="color:var(--warn)">未找到该术语</span>';
+    } else {
+      result.innerHTML = '<div class="label">' + d.term + ' <small>(' + d.pinyin + ')</small></div><div class="def">' + d.definition + '</div><div class="meta">分类：' + d.category + ' | 来源：' + d.source + '</div>';
+    }
+  } catch(e) {
+    result.innerHTML = '<span style="color:var(--error)">查询失败</span>';
+  }
+  fuzzy.textContent = isFuzzy ? '精确' : '模糊';
+}
+
+// ====== 语音合成 ======
+async function testTTS() {
+  const text = document.getElementById('tts-text').value.trim();
+  const div = document.getElementById('tts-audio');
+  if (!text) return;
+
+  try {
+    const r = await fetch(API + '/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text }),
+    });
+    if (r.status === 200) {
+      const d = await r.json();
+      if (d.audio_data) {
+        div.innerHTML = '<audio controls autoplay src="data:audio/wav;base64,' + d.audio_data + '"></audio>';
+      } else {
+        div.innerHTML = '<span style="color:var(--muted);font-size:0.85rem;">TTS 需要百度云 API 配置</span>';
+      }
+    } else {
+      div.innerHTML = '<span style="color:var(--warn);font-size:0.85rem;">TTS 服务不可用</span>';
+    }
+  } catch(e) {
+    div.innerHTML = '<span style="color:var(--error);font-size:0.85rem;">请求失败</span>';
+  }
+}
+</script>
+</body>
+</html>
