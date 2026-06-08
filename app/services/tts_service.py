@@ -74,7 +74,7 @@ class TTSService(BaseService):
             "spd": speed_val,
             "vol": volume_val,
             "per": per,
-            "aue": "6",   # WAV 格式
+            "aue": "4",   # PCM 16K 格式（避免 WAV 头被后处理破坏）
         }
 
         try:
@@ -83,7 +83,8 @@ class TTSService(BaseService):
                 data=params,
                 timeout=30,
             )
-            if resp.headers.get("Content-Type") == "audio/wav":
+            content_type = resp.headers.get("Content-Type", "")
+            if "audio" in content_type:
                 logger.info("TTS success: %d bytes", len(resp.content))
                 return resp.content
             else:

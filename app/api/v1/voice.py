@@ -50,9 +50,13 @@ def synthesize_voice():
         return jsonify({"error_code": "T002", "message": "文本过长，最多500字"}), 400
 
     audio = _assistant.tts.synthesize_speech(text)
+    # 导出为 WAV 格式后 base64 编码（AudioData.data 是原始 PCM）
+    wav_bytes = audio.to_wav_bytes()
+    import base64
+    wav_b64 = base64.b64encode(wav_bytes).decode("utf-8")
     return jsonify({
         "status": "success",
-        "audio_data": audio.to_base64(),
+        "audio_data": wav_b64,
         "duration": round(audio.duration, 2),
         "sample_rate": audio.sample_rate,
     })

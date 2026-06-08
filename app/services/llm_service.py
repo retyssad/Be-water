@@ -89,7 +89,8 @@ class LLMService(BaseService):
             )
             resp.raise_for_status()
             data = resp.json()
-            answer = data["choices"][0]["message"]["content"]
+            msg = data["choices"][0]["message"]
+            answer = msg.get("content") or msg.get("reasoning_content") or ""
             logger.info(
                 "DeepSeek response: model=%s tokens=%s",
                 data.get("model", "unknown"),
@@ -102,6 +103,73 @@ class LLMService(BaseService):
         except requests.exceptions.RequestException as e:
             logger.error("DeepSeek API error: %s", e)
             return self._fallback_response(prompt)
+
+    def stream_generate(self, prompt: str, temperature: float = 0.3,
+                        top_p: float = 0.85, max_tokens: int = 2048,
+                        history: Optional[list] = None,
+                        system_prompt: Optional[str] = None):
+        """流式调用 DeepSeek API，逐 token yield。
+        客户端断开连接（GeneratorExit）时自动关闭上游请求。"""
+        if not self._api_key:
+            # 无 API key 时 yield 兜底文本
+            fallback = self._fallback_response(prompt)
+            for char in fallback:
+                yield char
+            return
+
+        messages = self._build_messages(prompt, history, system_prompt)
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        resp = None
+        try:
+            resp = requests.post(
+                f"{self._api_base}/v1/chat/completions",
+                headers=self._headers,
+                json=payload,
+                stream=True,
+                timeout=(10, 120),  # (connect, read)
+            )
+            resp.raise_for_status()
+
+            for line in resp.iter_lines(decode_unicode=True):
+                if line and line.startswith("data: "):
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        delta = data["choices"][0].get("delta", {})
+                        token = delta.get("content") or delta.get("reasoning_content") or ""
+                        if token:
+                            yield token
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+
+        except GeneratorExit:
+            logger.info("Streaming client disconnected, closing upstream")
+        except requests.exceptions.Timeout:
+            logger.error("DeepSeek streaming timeout")
+            fallback = self._fallback_response(prompt)
+            for char in fallback:
+                yield char
+        except Exception as e:
+            logger.error("DeepSeek streaming error: %s", e)
+            fallback = self._fallback_response(prompt)
+            for char in fallback:
+                yield char
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
 
     def _fallback_response(self, prompt: str) -> str:
         """无 API key 或网络异常时的兜底"""
